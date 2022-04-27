@@ -1,6 +1,6 @@
 Import-Module sharepointpnppowershellonline
-$sourceURL="https://[redacted].sharepoint.com/sites/[client]"
-$destURL="https://[redacted].sharepoint.com/sites/TestTransport"
+$sourceURL="https://[redacted].sharepoint.com/sites/[source]"
+$destURL="https://[redacted].sharepoint.com/sites/[dest]"
 $tempFiles=[System.Collections.ArrayList]@()
 #$myuid="z***g@[redacted].com"
 #$mypass=read-host -Prompt "pwd: " -AsSecureString
