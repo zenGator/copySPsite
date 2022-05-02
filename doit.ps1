@@ -1,5 +1,5 @@
 #copySPsite
-#20220427:zG
+#20220429:zG
 #
 #
 <#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -58,12 +58,13 @@ if ($status -ne 200) {
 $tempFiles=[System.Collections.ArrayList]@()
 
 <# this method of building creds to authenticate to SP didn't work very well (at all)
- #$myuid="[redacted]@[company].com"
+ #$myuid="lw**n@s**t.com"
  #$mypass=read-host -Prompt "pwd: " -AsSecureString
  #$Credentials = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList $adminUPN, $AdminPassword
  #>
 
 # test to see if we are connected where we need to be
+# ToDo:  consider wrapping this in try{} because on new PoSh session there will be no connection, this would avoid the error/warning message
 $currConn=Get-PnPConnection
 if ($currConn.url -ne $sourceURL) {
     write 're-connecting to source'
@@ -81,7 +82,10 @@ if ($currConn.url -ne $sourceURL) {
 $pages=Get-PnPListItem -List sitepages
 
 <#ToDo: similar process for copying the various icons
-    perhaps, instead, use Copy-PnPFolder
+    can use same technique of copying to set of temp files 
+    with something like: Get-PnPFile -Url $pages[$i].FieldValues["FileRef"] -path U:\ -Filename [tempname] -AsFile
+    and then using Add-PnPFolder & Add-PnPFile to push up
+    or perhaps, instead, use Copy-PnPFolder
  #>
 #$docs=Get-PnPListItem -List Documents
 
@@ -90,6 +94,7 @@ if ($myVerbose) {  #there's other places where we can be more or less verbose; b
     write 'We''ll be copying these pages: '
     $pages.fieldvalues| foreach-object {write-host ([string]$_.ID),$_.FileLeafRef}
     write ('total: ' + $pages.Count)
+    #ToDo:  explain that the IDs may not be fully in sequence/complete; consider labeling the column as SP internal id or replacing with our own index
     }
 
 #write 'debugging:  end reached'
@@ -127,6 +132,7 @@ if ($myVerbose) {
 Connect-PnPOnline -Url $destURL -UseWebLogin 3> $null  # now we need to connect to the destination
 <#test to see that we've connected successfully
  #>
+$currConn=Get-PnPConnection
 if ($currConn.url -ne $desturl) {
     write 'We''re having problems establishing a connection to SharePoint.  Try closing this PoSh session and starting anew.'
     write 'It could be a permissions issue.  It could be that you need to authenticate to SharePoint from your browser before using this script.'
@@ -138,8 +144,7 @@ if ($currConn.url -ne $desturl) {
 <#ToDo:  consider testing to see that the number of tempfiles is equal to the # of sitepages 
  #>
 for ($i=0; $i -lt $tempFiles.Count; $i++) { #for each of the temp files
-    write-host $i $tempFiles[$i] "=>" $pages[$i+1].fieldvalues["FileLeafRef"]  #again, some feedback for the UX
-    
+    write-host ($i+1) $tempFiles[$i] "=>" $pages[$i].fieldvalues["FileLeafRef"]  #again, some feedback for the UX
     #LEGACY:  Apply-PnPProvisioningTemplate -Path $tempFiles[$i]
     Invoke-PnPSiteTemplate -Path $tempFiles[$i]
     }
