@@ -166,8 +166,8 @@ for ($i=0; $i -lt $tempFlair.Count; $i++) { #for each of the temp files
     }
 
 
-write-host "Template copy of $sourceName pages to $destName is complete."
-write-host "Next step:  copy items in icons&such to $destName and enjoy your new project."
+write-host "Template copy of $sourceName pages to $destName is complete. `nEnjoy your new project."
+#write-host "Next step:  copy items in icons&such to $destName and enjoy your new project."
 #ToDo:  see if copying icons&such to the new location might make the graphics auto-magically appear; if so, the above line is unnecessary
 write-host 'Also, you will want to point the links in Overall-Status.aspx to the local/project pages instead of the template.'
 write-host 'Finally, make sure the spreadsheet section of each Requirements page references the spreadsheet in the client''s project OneDrive, and not the Template.'
