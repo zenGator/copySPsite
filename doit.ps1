@@ -1,5 +1,5 @@
 #copySPsite
-#20220429:zG
+#20220502:zG
 #
 #
 <#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -55,17 +55,19 @@ if ($status -ne 200) {
 <# we will build a list of the temporary files created from the template (source); 
    these will then be pushed to the destination site
  #>
-$tempFiles=[System.Collections.ArrayList]@()
+$tempFiles=[System.Collections.ArrayList]@()  #for the templates/pages being copied
+$tempFlair=[System.Collections.ArrayList]@()  #for icons&such
 
 <# this method of building creds to authenticate to SP didn't work very well (at all)
- #$myuid="lw**n@s**t.com"
+ #$myuid="[user]@[co].com"
  #$mypass=read-host -Prompt "pwd: " -AsSecureString
  #$Credentials = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList $adminUPN, $AdminPassword
  #>
 
 # test to see if we are connected where we need to be
 # ToDo:  consider wrapping this in try{} because on new PoSh session there will be no connection, this would avoid the error/warning message
-$currConn=Get-PnPConnection
+try {$currConn=Get-PnPConnection }
+catch {"Not connected yet."}
 if ($currConn.url -ne $sourceURL) {
     write 're-connecting to source'
     Connect-PnPOnline -Url $sourceURL -useweblogin 3> null
@@ -80,36 +82,30 @@ if ($currConn.url -ne $sourceURL) {
 
 #let's see what pages need to be copied
 $pages=Get-PnPListItem -List sitepages
-
-<#ToDo: similar process for copying the various icons
-    can use same technique of copying to set of temp files 
-    with something like: Get-PnPFile -Url $pages[$i].FieldValues["FileRef"] -path U:\ -Filename [tempname] -AsFile
-    and then using Add-PnPFolder & Add-PnPFile to push up
-    or perhaps, instead, use Copy-PnPFolder
- #>
-#$docs=Get-PnPListItem -List Documents
-
+$flair=Get-PnPListItem -List Documents
 
 if ($myVerbose) {  #there's other places where we can be more or less verbose; but don't use $verbose in this code; that's a switch in the PnP.Powershell module
     write 'We''ll be copying these pages: '
     $pages.fieldvalues| foreach-object {write-host ([string]$_.ID),$_.FileLeafRef}
     write ('total: ' + $pages.Count)
     #ToDo:  explain that the IDs may not be fully in sequence/complete; consider labeling the column as SP internal id or replacing with our own index
+    write ("`nand these icons & such: ")
+    $flair.fieldvalues| foreach-object {write-host ([string]$_.ID),$_.FileLeafRef}
+    write ('total: ' + $flair.Count)
     }
 
 #write 'debugging:  end reached'
 #exit 256
 
-# here's the heart of this script
+# here's step one of the heart of this script
+write-host -NoNewline 'copying pages:'
 for ($i=0; $i -lt $pages.Count; $i++) { #for each of the sitepages listed above
-    
-    write-host -NoNewline 'copying '    
-    write-host -nonewline $pages[$i].fieldvalues["FileLeafRef"] ' . . . '
+    if ($myVerbose) {
+        write-host -nonewline $pages[$i].fieldvalues["FileLeafRef"] ' . . . '
         <# fieldvalues["FileLeafRef"] is the page name as it shows in the SitePages list
            fieldvalues["Title"] is shown in the default list display
-           this is one of those places we could be less verbose
          #>
-
+        }
     $pageName = $pages[$i].FieldValues["FileLeafRef"]  #as noted above, this is the page's filename (typically "[blah].aspx"
     $ServerRelativeUrl=(Get-PnPWeb).ServerRelativeUrl
     $file = Get-PnPFile -Url "$ServerRelativeUrl/sitePages/$pageName"  #get the sitepage
@@ -121,12 +117,23 @@ for ($i=0; $i -lt $pages.Count; $i++) { #for each of the sitepages listed above
     $null=$tempFiles.add($tempFile)   #pop onto our list of temp files
     write-host 'done'   # a little feedback for the UX
     }
+# this is step two, getting the flair
+$tempPath=[System.IO.Path]::GetTempPath()
+for ($i=0; $i -lt $flair.Count; $i++) {
+    if ($flair[$i].fieldvalues["ItemChildCount"]-gt 0) {continue}  # this skips directories
+    write-host ("copying ",$i," ",$flair[$i].fieldvalues["FileLeafRef"])
+    $iconName = $flair[$i].FieldValues["FileRef"]
+    $file = Get-PnPFile -Url "$iconName"
+    Get-PnPFile -Url "$iconName" -AsFile -Filename $flair[$i].fieldvalues["FileLeafRef"] -Path $tempPath -Force
+    $null=$tempFlair.add($flair[$i].fieldvalues["FileLeafRef"]) 
+    }
 
 #ToDo:  see if the the News webpart is in place
 
 if ($myVerbose) {
     write-host "These are the temporary files which will be copied over to ${destName}:"
     $tempFiles  #list them out for UX
+    $tempFlair
     }
 
 Connect-PnPOnline -Url $destURL -UseWebLogin 3> $null  # now we need to connect to the destination
@@ -143,11 +150,21 @@ if ($currConn.url -ne $desturl) {
 
 <#ToDo:  consider testing to see that the number of tempfiles is equal to the # of sitepages 
  #>
+
 for ($i=0; $i -lt $tempFiles.Count; $i++) { #for each of the temp files
     write-host ($i+1) $tempFiles[$i] "=>" $pages[$i].fieldvalues["FileLeafRef"]  #again, some feedback for the UX
     #LEGACY:  Apply-PnPProvisioningTemplate -Path $tempFiles[$i]
     Invoke-PnPSiteTemplate -Path $tempFiles[$i]
     }
+
+$flairFolder="icons&such"
+Add-PnPFolder -Name $flairFolder -Folder "Shared Documents" #create directory for flair
+
+for ($i=0; $i -lt $tempFlair.Count; $i++) { #for each of the temp files
+    write-host ($i+1) $flair[$i] "=>" $flair[$i].fieldvalues["FileLeafRef"]
+    Add-PnPFile -Path ($tempPath + $tempFlair[$i]) -Folder ("Shared Documents/"+$flairFolder)
+    }
+
 
 write-host "Template copy of $sourceName pages to $destName is complete."
 write-host "Next step:  copy items in icons&such to $destName and enjoy your new project."
