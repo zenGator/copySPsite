@@ -4,12 +4,15 @@
 #
 <#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  # This will copy a set of SharePoint pages; e.g., to build new client project from template
-  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#>
+ #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ #>
 
 [CMDletBinding()]
 #param ([Parameter(Mandatory=$true)][string]$inFile)
 param ( [Parameter(Mandatory=$true)][string]$sourceName = 'SAQDTemplate',
-        [Parameter(Mandatory=$true)][string]$destName,
+        [Parameter(Mandatory=$true)][string]$destName,  #take from URL to target site
+        [Parameter(Mandatory=$true)][string]$sourceDomain = 'https://[company1].sharepoint.com/sites/',
+        [Parameter(Mandatory=$true)][string]$destDomain = 'https://[company2].sharepoint.com/sites/',
         #[switch]$overwrite,
         #$dirsToMonitor = @() ,
         #[switch]$debugging ,
@@ -22,12 +25,16 @@ param ( [Parameter(Mandatory=$true)][string]$sourceName = 'SAQDTemplate',
 #NB:  if I remember correctly, the param bit above has to come first
 
 
+
 # LEGACY:  Import-Module sharepointpnppowershellonline
 Import-Module PnP.PowerShell   # we need this to interact with SharePoint
                                # ref: https://pnp.github.io/powershell/cmdlets/Copy-PnPFolder.html
 
-$sourceURL='https://sylint.sharepoint.com/sites/' + $sourceName
-$destURL='https://sylint.sharepoint.com/sites/' + $destName
+<# ToDo:  ensure there's a / separating the domain from the site
+   More Important:  scrub input (Treat all user-supplied data as untrusted, yeah?)
+ #>
+$sourceURL=$sourceDomain + $sourceName
+$destURL=$destDomain + $destName
 
 
 <# test for existence of source & destination URLs
@@ -73,7 +80,9 @@ if ($currConn.url -ne $sourceURL) {
     Connect-PnPOnline -Url $sourceURL -useweblogin 3> null
     }
 $currConn=Get-PnPConnection
-if ($currConn.url -ne $sourceURL) {
+if ($currConn.url -ne [System.Web.HttpUtility]::UrlDecode($sourceURL)) {
+    # the decode may help if the sourceName provided at invocation needs to contain a special char
+    # the $sourceName (and/or $destName) can be URL-encoded or put in quotes; if encoded, the decode is needed
     write 'We''re having problems establishing a connection to SharePoint.  Try closing this PoSh session and starting anew.'
     write 'It could be a permissions issue.  It could be that you need to authenticate to SharePoint from your browser before using this script.'
     write 'In any case, we''re aborting.  Sorry.'
@@ -98,7 +107,7 @@ if ($myVerbose) {  #there's other places where we can be more or less verbose; b
 #exit 256
 
 # here's step one of the heart of this script
-write-host -NoNewline 'copying pages:'
+write-host 'copying pages . . . '
 for ($i=0; $i -lt $pages.Count; $i++) { #for each of the sitepages listed above
     if ($myVerbose) {
         write-host -nonewline $pages[$i].fieldvalues["FileLeafRef"] ' . . . '
@@ -115,13 +124,15 @@ for ($i=0; $i -lt $pages.Count; $i++) { #for each of the sitepages listed above
     Export-PnPPage -Force -Identity $pageName -Out $tempFile  #save the sitepage as tempfile
     
     $null=$tempFiles.add($tempFile)   #pop onto our list of temp files
-    write-host 'done'   # a little feedback for the UX
+    if ($myVerbose) {write-host 'done'}   # a little feedback for the UX
     }
 # this is step two, getting the flair
 $tempPath=[System.IO.Path]::GetTempPath()
 for ($i=0; $i -lt $flair.Count; $i++) {
     if ($flair[$i].fieldvalues["ItemChildCount"]-gt 0) {continue}  # this skips directories
-    write-host ("copying ",$i," ",$flair[$i].fieldvalues["FileLeafRef"])
+<# ToDo:  save off the dir names so they can be created on the dest site
+ #>
+    if ($myVerbose) {write-host ("copying ",$i," ",$flair[$i].fieldvalues["FileLeafRef"])}
     $iconName = $flair[$i].FieldValues["FileRef"]
     $file = Get-PnPFile -Url "$iconName"
     Get-PnPFile -Url "$iconName" -AsFile -Filename $flair[$i].fieldvalues["FileLeafRef"] -Path $tempPath -Force
@@ -140,7 +151,8 @@ Connect-PnPOnline -Url $destURL -UseWebLogin 3> $null  # now we need to connect 
 <#test to see that we've connected successfully
  #>
 $currConn=Get-PnPConnection
-if ($currConn.url -ne $desturl) {
+if ($currConn.url -ne [System.Web.HttpUtility]::UrlDecode($desturl)) {
+    # purpose of UrlDecode explained above where connection to source is established
     write 'We''re having problems establishing a connection to SharePoint.  Try closing this PoSh session and starting anew.'
     write 'It could be a permissions issue.  It could be that you need to authenticate to SharePoint from your browser before using this script.'
     write 'This is unexpected because we were able to connect to the source.'
@@ -164,6 +176,8 @@ for ($i=0; $i -lt $tempFlair.Count; $i++) { #for each of the temp files
     write-host ($i+1) $flair[$i] "=>" $flair[$i].fieldvalues["FileLeafRef"]
     Add-PnPFile -Path ($tempPath + $tempFlair[$i]) -Folder ("Shared Documents/"+$flairFolder)
     }
+    <# ToDo:  SAQ Tracker should go into "Shared Documents", but not the "icons&such" subdir
+     #>
 
 
 write-host "Template copy of $sourceName pages to $destName is complete. `nEnjoy your new project."
